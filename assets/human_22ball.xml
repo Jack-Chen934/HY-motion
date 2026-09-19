@@ -1,0 +1,120 @@
+<?xml version='1.0' encoding='utf-8'?>
+<mujoco model="hymotion_human_22ball">
+  <compiler angle="radian" coordinate="local" inertiafromgeom="true" />
+  <option timestep="0.01" gravity="0 0 0" integrator="Euler" />
+  <default>
+    <joint damping="0.2" armature="0.01" limited="false" />
+    <geom contype="1" conaffinity="1" condim="3" density="500" friction="0.8 0.1 0.1" rgba="0.72 0.58 0.38 1" />
+  </default>
+  <worldbody>
+    <body name="pelvis" pos="0 0 0">
+      <freejoint name="pelvis_free" />
+      <geom name="pelvis_joint" type="sphere" size="0.056250" />
+      <body name="left_hip" pos="0.08237194 -0.00024669 -0.08999128">
+        <joint name="left_hip_ball" type="ball" pos="0 0 0" />
+        <geom name="left_hip_bone" type="capsule" fromto="0 0 0 -0.08237194 0.00024669 0.08999128" size="0.039040" />
+        <geom name="left_hip_joint" type="sphere" size="0.045000" />
+        <body name="left_knee" pos="-0.01531851 -0.17047279 -0.33697560">
+          <joint name="left_knee_ball" type="ball" pos="0 0 0" />
+          <geom name="left_knee_bone" type="capsule" fromto="0 0 0 0.01531851 0.17047279 0.33697560" size="0.045000" />
+          <geom name="left_knee_joint" type="sphere" size="0.045000" />
+          <body name="left_ankle" pos="-0.04207990 0.01217569 -0.39914015">
+            <joint name="left_ankle_ball" type="ball" pos="0 0 0" />
+            <geom name="left_ankle_bone" type="capsule" fromto="0 0 0 0.04207990 -0.01217569 0.39914015" size="0.045000" />
+            <geom name="left_ankle_joint" type="sphere" size="0.045000" />
+            <body name="left_foot" pos="0.04597576 -0.13784495 -0.06737981">
+              <joint name="left_foot_ball" type="ball" pos="0 0 0" />
+              <geom name="left_foot_bone" type="capsule" fromto="0 0 0 -0.04597576 0.13784495 0.06737981" size="0.045000" />
+              <geom name="left_foot_joint" type="sphere" size="0.045000" />
+            </body>
+          </body>
+        </body>
+      </body>
+      <body name="right_hip" pos="-0.07878167 -0.00024669 -0.08999128">
+        <joint name="right_hip_ball" type="ball" pos="0 0 0" />
+        <geom name="right_hip_bone" type="capsule" fromto="0 0 0 0.07878167 0.00024669 0.08999128" size="0.038273" />
+        <geom name="right_hip_joint" type="sphere" size="0.045000" />
+        <body name="right_knee" pos="-0.03791992 0.00894620 -0.37593913">
+          <joint name="right_knee_ball" type="ball" pos="0 0 0" />
+          <geom name="right_knee_bone" type="capsule" fromto="0 0 0 0.03791992 -0.00894620 0.37593913" size="0.045000" />
+          <geom name="right_knee_joint" type="sphere" size="0.045000" />
+          <body name="right_ankle" pos="-0.00462422 0.30724964 -0.25847283">
+            <joint name="right_ankle_ball" type="ball" pos="0 0 0" />
+            <geom name="right_ankle_bone" type="capsule" fromto="0 0 0 0.00462422 -0.30724964 0.25847283" size="0.045000" />
+            <geom name="right_ankle_joint" type="sphere" size="0.045000" />
+            <body name="right_foot" pos="-0.00589420 -0.02961989 -0.15729897">
+              <joint name="right_foot_ball" type="ball" pos="0 0 0" />
+              <geom name="right_foot_bone" type="capsule" fromto="0 0 0 0.00589420 0.02961989 0.15729897" size="0.045000" />
+              <geom name="right_foot_joint" type="sphere" size="0.045000" />
+            </body>
+          </body>
+        </body>
+      </body>
+      <body name="spine1" pos="0.00179501 -0.00000000 0.09425105">
+        <joint name="spine1_ball" type="ball" pos="0 0 0" />
+        <geom name="spine1_bone" type="capsule" fromto="0 0 0 -0.00179501 0.00000000 -0.09425105" size="0.030166" />
+        <geom name="spine1_joint" type="sphere" size="0.045000" />
+        <body name="spine2" pos="0.00662035 0.00140835 0.12246174">
+          <joint name="spine2_ball" type="ball" pos="0 0 0" />
+          <geom name="spine2_bone" type="capsule" fromto="0 0 0 -0.00662035 -0.00140835 -0.12246174" size="0.039248" />
+          <geom name="spine2_joint" type="sphere" size="0.045000" />
+          <body name="spine3" pos="0.00165654 0.02422525 0.08022702">
+            <joint name="spine3_ball" type="ball" pos="0 0 0" />
+            <geom name="spine3_bone" type="capsule" fromto="0 0 0 -0.00165654 -0.02422525 -0.08022702" size="0.026823" />
+            <geom name="spine3_joint" type="sphere" size="0.045000" />
+            <body name="neck" pos="0.01322314 -0.00157244 0.19639434">
+              <joint name="neck_ball" type="ball" pos="0 0 0" />
+              <geom name="neck_bone" type="capsule" fromto="0 0 0 -0.01322314 0.00157244 -0.19639434" size="0.045000" />
+              <geom name="neck_joint" type="sphere" size="0.045000" />
+              <body name="head" pos="0.00454371 -0.01187200 0.09480749">
+                <joint name="head_ball" type="ball" pos="0 0 0" />
+                <geom name="head_bone" type="capsule" fromto="0 0 0 -0.00454371 0.01187200 -0.09480749" size="0.030610" />
+                <geom name="head_joint" type="sphere" size="0.045000" />
+              </body>
+            </body>
+            <body name="left_collar" pos="0.06154529 0.01620903 0.11704376">
+              <joint name="left_collar_ball" type="ball" pos="0 0 0" />
+              <geom name="left_collar_bone" type="capsule" fromto="0 0 0 -0.06154529 -0.01620903 -0.11704376" size="0.042633" />
+              <geom name="left_collar_joint" type="sphere" size="0.045000" />
+              <body name="left_shoulder" pos="0.09587044 0.00024858 -0.05673751">
+                <joint name="left_shoulder_ball" type="ball" pos="0 0 0" />
+                <geom name="left_shoulder_bone" type="capsule" fromto="0 0 0 -0.09587044 -0.00024858 0.05673751" size="0.035649" />
+                <geom name="left_shoulder_joint" type="sphere" size="0.045000" />
+                <body name="left_elbow" pos="0.02364181 0.06340005 -0.25999600">
+                  <joint name="left_elbow_ball" type="ball" pos="0 0 0" />
+                  <geom name="left_elbow_bone" type="capsule" fromto="0 0 0 -0.02364181 -0.06340005 0.25999600" size="0.045000" />
+                  <geom name="left_elbow_joint" type="sphere" size="0.045000" />
+                  <body name="left_wrist" pos="0.03214671 0.05537111 -0.26167622">
+                    <joint name="left_wrist_ball" type="ball" pos="0 0 0" />
+                    <geom name="left_wrist_bone" type="capsule" fromto="0 0 0 -0.03214671 -0.05537111 0.26167622" size="0.045000" />
+                    <geom name="left_wrist_joint" type="sphere" size="0.045000" />
+                  </body>
+                </body>
+              </body>
+            </body>
+            <body name="right_collar" pos="-0.04728233 0.00790822 0.12430470">
+              <joint name="right_collar_ball" type="ball" pos="0 0 0" />
+              <geom name="right_collar_bone" type="capsule" fromto="0 0 0 0.04728233 -0.00790822 -0.12430470" size="0.042633" />
+              <geom name="right_collar_joint" type="sphere" size="0.045000" />
+              <body name="right_shoulder" pos="-0.10168924 -0.01851043 -0.04155753">
+                <joint name="right_shoulder_ball" type="ball" pos="0 0 0" />
+                <geom name="right_shoulder_bone" type="capsule" fromto="0 0 0 0.10168924 0.01851043 0.04155753" size="0.035649" />
+                <geom name="right_shoulder_joint" type="sphere" size="0.045000" />
+                <body name="right_elbow" pos="-0.08947552 -0.04594636 -0.24911742">
+                  <joint name="right_elbow_ball" type="ball" pos="0 0 0" />
+                  <geom name="right_elbow_bone" type="capsule" fromto="0 0 0 0.08947552 0.04594636 0.24911742" size="0.045000" />
+                  <geom name="right_elbow_joint" type="sphere" size="0.045000" />
+                  <body name="right_wrist" pos="-0.05773105 -0.07033674 -0.25356194">
+                    <joint name="right_wrist_ball" type="ball" pos="0 0 0" />
+                    <geom name="right_wrist_bone" type="capsule" fromto="0 0 0 0.05773105 0.07033674 0.25356194" size="0.045000" />
+                    <geom name="right_wrist_joint" type="sphere" size="0.045000" />
+                  </body>
+                </body>
+              </body>
+            </body>
+          </body>
+        </body>
+      </body>
+    </body>
+  </worldbody>
+</mujoco>
