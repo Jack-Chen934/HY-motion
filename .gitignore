@@ -6,3 +6,4 @@ reports/*_short.json
 reports/stage_a_viewer.json
 reports/wooden_human_static.json
 reports/wooden_human_static_headless.json
+reports/stage_b_mjcf_frame*.json
