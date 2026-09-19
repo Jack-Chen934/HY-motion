@@ -45,7 +45,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--foot-clearance",
         type=float,
-        default=FOOT_GEOM_RADIUS_M,
+        default=FOOT_GEOM_RADIUS_M + 0.01,
         help="Target foot-anchor height above the ground during contact (meters).",
     )
     parser.add_argument(
@@ -53,6 +53,11 @@ def parse_args() -> argparse.Namespace:
         type=float,
         default=0.085,
         help="A locked foot is released only above this raw height (meters).",
+    )
+    parser.add_argument(
+        "--leg-ik",
+        action="store_true",
+        help="Use Genesis multi-link IK on hip/knee/ankle joints for locked feet.",
     )
     return parser.parse_args()
 
@@ -158,6 +163,74 @@ def joint_position(human, body_name: str) -> np.ndarray:
     return as_position(human.get_joint(name=f"{body_name}_ball").get_anchor_pos())
 
 
+def set_ball_joint_delta(qpos: np.ndarray, joint, axis: np.ndarray, angle: float) -> None:
+    """Apply a small parent-frame rotation to a ball-joint quaternion in qpos."""
+    current = qpos[joint.q_start : joint.q_start + 4]
+    current_rotation = Rotation.from_quat([current[1], current[2], current[3], current[0]])
+    delta_rotation = Rotation.from_rotvec(axis * angle)
+    updated = delta_rotation * current_rotation
+    qpos[joint.q_start : joint.q_start + 4] = quat_wxyz(updated.as_matrix())
+
+
+def custom_leg_ik(
+    human,
+    qpos: np.ndarray,
+    active_contacts: list[tuple[int, str]],
+    targets: dict[str, np.ndarray],
+    iterations: int = 6,
+    damping: float = 0.04,
+    finite_difference_step: float = 1e-3,
+    max_joint_step: float = 0.18,
+) -> tuple[np.ndarray, float]:
+    """Numerical damped-least-squares IK for the ball-joint human legs."""
+    active_legs = [foot_name.split("_")[0] for _, foot_name in active_contacts]
+    joints = []
+    for leg in active_legs:
+        joints.extend(
+            human.get_joint(name=f"{leg}_{segment}_ball")
+            for segment in ("hip", "knee", "ankle")
+        )
+    variables = [(joint, axis) for joint in joints for axis in np.eye(3, dtype=np.float32)]
+    target_vector = np.concatenate([targets[name] for _, name in active_contacts]).astype(np.float32)
+
+    for _ in range(iterations):
+        human.set_qpos(qpos, zero_velocity=True)
+        current_vector = np.concatenate(
+            [joint_position(human, name) for _, name in active_contacts]
+        ).astype(np.float32)
+        error = target_vector - current_vector
+        if float(np.max(np.abs(error))) < 1e-4:
+            break
+
+        jacobian = np.zeros((len(target_vector), len(variables)), dtype=np.float32)
+        for column, (joint, axis) in enumerate(variables):
+            trial_qpos = qpos.copy()
+            set_ball_joint_delta(trial_qpos, joint, axis, finite_difference_step)
+            human.set_qpos(trial_qpos, zero_velocity=True)
+            trial_vector = np.concatenate(
+                [joint_position(human, name) for _, name in active_contacts]
+            ).astype(np.float32)
+            jacobian[:, column] = (trial_vector - current_vector) / finite_difference_step
+
+        system = jacobian @ jacobian.T + (damping**2) * np.eye(len(target_vector), dtype=np.float32)
+        delta = jacobian.T @ np.linalg.solve(system, error)
+        for joint_index, joint in enumerate(joints):
+            joint_delta = delta[joint_index * 3 : joint_index * 3 + 3]
+            norm = float(np.linalg.norm(joint_delta))
+            if norm > max_joint_step:
+                joint_delta *= max_joint_step / norm
+            angle = float(np.linalg.norm(joint_delta))
+            if angle > 1e-8:
+                set_ball_joint_delta(qpos, joint, joint_delta / angle, angle)
+
+    human.set_qpos(qpos, zero_velocity=True)
+    final_vector = np.concatenate(
+        [joint_position(human, name) for _, name in active_contacts]
+    ).astype(np.float32)
+    final_error = float(np.max(np.abs(target_vector - final_vector)))
+    return qpos, final_error
+
+
 def qpos_for_frame(points: np.ndarray, rest: np.ndarray, rest_basis: np.ndarray, human) -> np.ndarray:
     root_target_basis = rotation_from_basis(points)
     root_q = quat_wxyz(root_target_basis @ rest_basis.T)
@@ -188,7 +261,10 @@ def run(
     foot_contact_height: float,
     foot_clearance: float,
     foot_release_height: float,
+    leg_ik: bool,
 ) -> None:
+    if leg_ik and not foot_lock:
+        raise ValueError("--leg-ik requires --foot-lock")
     points, fps = prepare_points(motion_path.resolve())
     contact_info = {
         "contact_mask": np.zeros((len(points), 2), dtype=bool),
@@ -216,7 +292,10 @@ def run(
         show_viewer=show_viewer,
     )
     scene.add_entity(gs.morphs.Plane(), name="ground")
-    human = scene.add_entity(gs.morphs.MJCF(file=str(model_path.resolve())), name="hymotion_human_22ball")
+    human = scene.add_entity(
+        gs.morphs.MJCF(file=str(model_path.resolve()), requires_jac_and_IK=False),
+        name="hymotion_human_22ball",
+    )
     scene.build()
 
     max_root_error = 0.0
@@ -232,18 +311,31 @@ def run(
     locked_foot_xy = {name: None for name in FOOT_NAMES}
     max_root_correction = 0.0
     max_ground_clamp = 0.0
+    max_ik_position_error = 0.0
+    max_ik_qpos_delta = 0.0
+    ik_frames = 0
+    last_frame = None
     started = time.perf_counter()
     for step in range(steps + 1):
         frame = min(int(round(min(step * SIM_DT, requested_duration) * fps)), len(points) - 1)
+        if frame == last_frame:
+            if show_viewer:
+                scene.step()
+            else:
+                scene.step(update_visualizer=False)
+            continue
+        last_frame = frame
         frame_points = points[frame]
         qpos = qpos_for_frame(frame_points, rest, rest_basis, human)
         human.set_qpos(qpos, zero_velocity=True)
         correction = np.zeros(3, dtype=np.float32)
+        ik_targets = {}
 
         # Correct the free-root translation from the actual Genesis anchors. The
         # input keypoints and the fixed-length skeleton are not identical, so a
         # keypoint-only lock can still leave the collision spheres underground.
         active_contacts = []
+        ik_contacts = []
         if foot_lock:
             for foot_index, foot_name in enumerate(FOOT_NAMES):
                 if contact_info["contact_mask"][frame, foot_index]:
@@ -251,8 +343,35 @@ def run(
                     actual = joint_position(human, foot_name)
                     if locked_foot_xy[foot_name] is None:
                         locked_foot_xy[foot_name] = actual[:2].copy()
+                    ik_targets[foot_name] = np.array(
+                        [locked_foot_xy[foot_name][0], locked_foot_xy[foot_name][1], foot_clearance],
+                        dtype=np.float32,
+                    )
                 else:
                     locked_foot_xy[foot_name] = None
+            ik_contacts = list(active_contacts)
+            if leg_ik:
+                # A non-contacting foot that is already below the clearance
+                # plane receives a temporary lift target. Its XY is not locked,
+                # so this does not turn swing motion into a support constraint.
+                for foot_index, foot_name in enumerate(FOOT_NAMES):
+                    if contact_info["contact_mask"][frame, foot_index]:
+                        continue
+                    actual = joint_position(human, foot_name)
+                    if actual[2] < foot_clearance:
+                        ik_contacts.append((foot_index, foot_name))
+                        ik_targets[foot_name] = np.array(
+                            [actual[0], actual[1], foot_clearance], dtype=np.float32
+                        )
+
+            if leg_ik and ik_contacts:
+                qpos_before_ik = qpos.copy()
+                qpos, _ = custom_leg_ik(human, qpos, ik_contacts, ik_targets)
+                qpos = np.asarray(qpos, dtype=np.float32)
+                max_ik_qpos_delta = max(max_ik_qpos_delta, float(np.max(np.abs(qpos - qpos_before_ik))))
+                human.set_qpos(qpos, zero_velocity=True)
+                ik_frames += 1
+
             if active_contacts:
                 free = human.get_joint(name="pelvis_free")
                 for _ in range(3):
@@ -281,13 +400,19 @@ def run(
         # frames where no foot-lock constraint is active.
         actual_feet = [joint_position(human, foot_name) for foot_name in FOOT_NAMES]
         lowest_foot_z = min(float(position[2]) for position in actual_feet)
-        if foot_lock and lowest_foot_z < foot_clearance:
+        if foot_lock and not active_contacts and lowest_foot_z < foot_clearance:
             ground_correction = np.array([0.0, 0.0, foot_clearance - lowest_foot_z], dtype=np.float32)
             qpos[human.get_joint(name="pelvis_free").q_start : human.get_joint(name="pelvis_free").q_start + 3] += ground_correction
             human.set_qpos(qpos, zero_velocity=True)
             correction += ground_correction
             max_ground_clamp = max(max_ground_clamp, float(ground_correction[2]))
             max_root_correction = max(max_root_correction, float(np.linalg.norm(correction)))
+        if leg_ik:
+            for foot_name, target in ik_targets.items():
+                max_ik_position_error = max(
+                    max_ik_position_error,
+                    float(np.linalg.norm(joint_position(human, foot_name) - target)),
+                )
         evaluation_points = frame_points + correction if np.any(correction) else frame_points
         actual_root = joint_position(human, "pelvis")
         max_root_error = max(max_root_error, float(np.linalg.norm(actual_root - evaluation_points[0])))
@@ -342,6 +467,11 @@ def run(
         "foot_contact_height_m": foot_contact_height,
         "foot_clearance_m": foot_clearance,
         "foot_release_height_m": foot_release_height,
+        "leg_ik_enabled": leg_ik,
+        "leg_ik_dofs": 18,
+        "leg_ik_frames": int(ik_frames),
+        "max_leg_ik_position_error_m": max_ik_position_error,
+        "max_leg_ik_qpos_delta": max_ik_qpos_delta,
         "foot_contact_frames": {
             name: int(count) for name, count in foot_contact_counts.items()
         },
@@ -357,7 +487,7 @@ def run(
         "max_joint_position_error_frame": max_joint_error_frame,
         "elapsed_wall_seconds": time.perf_counter() - started,
         "viewer": show_viewer,
-        "note": "Joint rotations are retargeted from keypoint bone directions; twist is underdetermined and not fitted. Foot lock is translation-only preprocessing and is not a dynamics/IK contact solve.",
+        "note": "Joint rotations are retargeted from keypoint bone directions; twist is underdetermined. Foot lock is kinematic preprocessing. Optional leg IK constrains hip/knee/ankle DOFs only and is not dynamics/PD control.",
     }
     report_path.resolve().parent.mkdir(parents=True, exist_ok=True)
     report_path.resolve().write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
@@ -377,4 +507,5 @@ if __name__ == "__main__":
         args.foot_contact_height,
         args.foot_clearance,
         args.foot_release_height,
+        args.leg_ik,
     )

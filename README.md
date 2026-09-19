@@ -84,9 +84,18 @@ export NUMBA_CACHE_DIR=/tmp/hy_genesis_numba
   --report reports/stage_b_foot_lock.json
 ```
 
-足底逻辑当前是运动学约束：从脚部关键点检测接触，接触期间锁定脚的 XY，并读取 Genesis 的真实脚关节锚点修正根部位置；它不是动力学接触求解，也没有腿部 IK。报告会记录接触帧数、最大穿地量、脚滑移距离和根部校正量。
+开启球关节腿部数值 IK：
 
-当前版本的关节链使用固定骨长和球关节，能作为 Genesis 结构/碰撞代理，但关键点重定向仍是骨段方向拟合。足底约束能消除脚部碰撞体穿地，但双脚同时接触时仍可能滑动；下一步需要做带末端位置约束的腿部 IK，再进行动力学 PD 跟踪。
+```bash
+/var/local/sorry/conda/envs/tavis/bin/python \
+  replay_human_mjcf.py \
+  --collision --foot-lock --leg-ik \
+  --report reports/stage_b_leg_ik.json
+```
+
+足底逻辑是运动学约束：从脚部关键点检测接触，接触期间锁定脚的 XY，并读取 Genesis 的真实脚关节锚点修正根部位置。`--leg-ik` 使用独立的阻尼最小二乘数值 IK，针对当前 MJCF 的髋/膝/踝球关节计算脚锚点 Jacobian；非接触脚若低于地面，会获得临时抬脚目标。它不是动力学接触求解，也不是 PD 控制。报告会记录接触帧数、最大穿地量、脚滑移距离、IK 误差和根部校正量。
+
+当前版本的关节链使用固定骨长和球关节，能作为 Genesis 结构/碰撞代理，但上身关键点重定向仍是骨段方向拟合。启用腿部 IK 后，接触脚可保持稳定，下一步应进行动力学 PD 跟踪和真实机器人/人体交互验证。
 
 ## 不包含
 
