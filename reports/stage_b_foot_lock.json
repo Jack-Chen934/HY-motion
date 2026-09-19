@@ -1,0 +1,39 @@
+{
+  "status": "success",
+  "motion": "/home/sorry/python_ws/hy-motion-workspace/genesis-human-experiment/motions/prepared/final_full_cooperation_seed2026.npz",
+  "model": "/home/sorry/python_ws/hy-motion-workspace/genesis-human-experiment/assets/human_22ball.xml",
+  "frames": 150,
+  "motion_fps": 30.0,
+  "sim_dt": 0.01,
+  "steps": 497,
+  "duration_seconds": 4.966666666666667,
+  "joints": 22,
+  "qpos_size": 91,
+  "human_mode": "mjcf_ball_joint_kinematic_replay",
+  "collision_geometry": "capsule_and_sphere",
+  "collision_enabled": true,
+  "foot_lock_enabled": true,
+  "foot_contact_height_m": 0.055,
+  "foot_clearance_m": 0.045,
+  "foot_release_height_m": 0.085,
+  "foot_contact_frames": {
+    "left_foot": 446,
+    "right_foot": 439
+  },
+  "max_foot_penetration_m": 8.761882781815888e-08,
+  "max_foot_anchor_below_ground_m": 0.0,
+  "max_foot_height_error_m": 0.09424981653690338,
+  "foot_sliding_distance_m": {
+    "left_foot": 0.7046859101974405,
+    "right_foot": 0.7070113062363816
+  },
+  "max_root_correction_m": 0.17637412250041962,
+  "max_ground_clamp_m": 0.0793570727109909,
+  "max_root_tracking_error_m": 2.666641876203357e-07,
+  "max_joint_position_error_m": 0.461802214384079,
+  "max_joint_position_error_joint": "right_ankle",
+  "max_joint_position_error_frame": 57,
+  "elapsed_wall_seconds": 3.6152172309994057,
+  "viewer": false,
+  "note": "Joint rotations are retargeted from keypoint bone directions; twist is underdetermined and not fitted. Foot lock is translation-only preprocessing and is not a dynamics/IK contact solve."
+}
