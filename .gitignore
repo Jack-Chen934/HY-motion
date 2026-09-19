@@ -1,0 +1,8 @@
+__pycache__/
+*.py[cod]
+*.log
+reports/*_viewer_test.json
+reports/*_short.json
+reports/stage_a_viewer.json
+reports/wooden_human_static.json
+reports/wooden_human_static_headless.json

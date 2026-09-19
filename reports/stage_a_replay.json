@@ -1,0 +1,28 @@
+{
+  "status": "success",
+  "motion": "/home/sorry/python_ws/hy-motion-workspace/genesis-human-experiment/motions/prepared/final_full_cooperation_seed2026.npz",
+  "frames": 150,
+  "motion_fps": 30.0,
+  "sim_dt": 0.01,
+  "sim_hz": 100.0,
+  "requested_duration_seconds": 4.966666666666667,
+  "steps": 497,
+  "coordinate_conversion": "HY Y-up -> Genesis Z-up via proper rotation",
+  "ground_lift_m": 0.0,
+  "human_mode": "kinematic_capsule_skeleton",
+  "body_joints": 22,
+  "max_root_tracking_error_m": 0.0,
+  "root_start_genesis": [
+    -0.006368598900735378,
+    -0.0016363579779863358,
+    0.9438245296478271
+  ],
+  "root_end_genesis": [
+    0.2500731647014618,
+    -2.16228985786438,
+    0.9654011726379395
+  ],
+  "root_net_displacement_m": 2.1759254298374864,
+  "elapsed_wall_seconds": 9.794906854000146,
+  "viewer": false
+}

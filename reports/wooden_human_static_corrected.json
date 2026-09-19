@@ -1,0 +1,24 @@
+{
+  "status": "success",
+  "model": "/home/sorry/python_ws/hy-motion-workspace/genesis-human-experiment/assets/wooden_model/boy_Rigging_smplx_tex.glb",
+  "scale": 0.01,
+  "coordinate_conversion": "GLB Y-up -> Genesis Z-up",
+  "mesh_bounds_before_ground_lift_m": {
+    "min": [
+      -0.8906334638595581,
+      -0.1604766845703125,
+      -1.1610013246536255
+    ],
+    "max": [
+      0.8906334638595581,
+      0.12638048827648163,
+      0.5697715282440186
+    ]
+  },
+  "ground_lift_m": 1.1810013246536255,
+  "human_mode": "static_visual_mesh",
+  "collision": false,
+  "viewer": false,
+  "elapsed_wall_seconds": 1.7496610010020959,
+  "note": "The GLB contains the source skeleton, but this stage does not drive skinning or joints."
+}
