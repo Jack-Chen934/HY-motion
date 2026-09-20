@@ -65,6 +65,8 @@ export NUMBA_CACHE_DIR=/tmp/hy_genesis_numba
   load_wooden_human.py --viewer
 ```
 
+注意：`load_wooden_human.py` 当前只加载 GLB 木制网格并进行静态展示，不会播放 HY-Motion 动作，也不会驱动 GLB 的骨骼蒙皮。
+
 ## 运行动作回放
 
 ```bash
@@ -99,6 +101,30 @@ export NUMBA_CACHE_DIR=/tmp/hy_genesis_numba
 /var/local/sorry/conda/envs/tavis/bin/python \
   replay_human_mjcf.py --viewer
 ```
+
+`replay_human_mjcf.py` 会读取默认的
+`motions/prepared/final_full_cooperation_seed2026.npz`，因此这里播放的确实是
+HY-Motion 生成的动作；但当前画面主体是 MJCF 胶囊/球体人体，而不是
+`assets/wooden_model/boy_Rigging_smplx_tex.glb` 网格。相机默认跟随人体根部，适合查看完整行走；如需固定世界坐标相机，可增加 `--fixed-camera`。
+
+完整行走可视化示例：
+
+```bash
+export QD_TMP_DIR=/tmp/hy_genesis_qd
+export XDG_CACHE_HOME=/tmp/hy_genesis_cache
+export MPLCONFIGDIR=/tmp/hy_genesis_mpl
+export NUMBA_CACHE_DIR=/tmp/hy_genesis_numba
+export NUMBA_DISABLE_CACHING=1
+
+/var/local/sorry/conda/envs/tavis/bin/python \
+  replay_human_mjcf.py \
+  --viewer \
+  --foot-lock \
+  --foot-clearance 0.055 \
+  --report reports/viewer_follow_walk.json
+```
+
+当前尚未提供“GLB 网格蒙皮由 HY-Motion 动作驱动”的完整回放脚本。要实现该展示，需要建立 GLB/SMPL-X 骨骼与 HY-Motion 关节的映射，将每帧动作转换为骨骼局部变换，并通过 Genesis 支持的可变形网格或外部渲染器更新蒙皮；这与当前 MJCF 碰撞代理回放是两个独立阶段。
 
 开启碰撞几何进行短时测试：
 

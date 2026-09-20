@@ -50,6 +50,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--report", type=Path, default=DEFAULT_REPORT)
     parser.add_argument("--seconds", type=float, default=None)
     parser.add_argument("--viewer", action="store_true")
+    parser.add_argument(
+        "--fixed-camera",
+        action="store_true",
+        help="Keep the viewer camera fixed at the initial world position instead of following the human.",
+    )
     parser.add_argument("--collision", action="store_true")
     parser.add_argument(
         "--foot-lock",
@@ -524,6 +529,7 @@ def run(
     report_path: Path,
     seconds: float | None,
     show_viewer: bool,
+    fixed_camera: bool,
     collision: bool,
     foot_lock: bool,
     foot_contact_height: float,
@@ -560,7 +566,10 @@ def run(
         sim_options=gs.options.SimOptions(dt=SIM_DT, gravity=(0.0, 0.0, 0.0)),
         rigid_options=gs.options.RigidOptions(enable_collision=collision, box_box_detection=True),
         viewer_options=gs.options.ViewerOptions(
-            res=(960, 640), camera_pos=(2.8, -2.8, 1.8), camera_lookat=(0.0, 0.0, 0.9), camera_fov=40
+            res=(1100, 700),
+            camera_pos=(3.4, -3.4, 2.2),
+            camera_lookat=(0.0, 0.0, 0.95),
+            camera_fov=50,
         ),
         show_viewer=show_viewer,
     )
@@ -570,6 +579,16 @@ def run(
         name="hymotion_human_22ball",
     )
     scene.build()
+    camera_follow_enabled = bool(show_viewer and not fixed_camera)
+    if camera_follow_enabled:
+        # The clip travels about 2.2 m along -Y. Follow the human root so the
+        # full walk remains visible instead of leaving the fixed origin view.
+        scene.viewer.follow_entity(
+            human,
+            fixed_axis=(None, None, None),
+            smoothing=0.92,
+            fix_orientation=False,
+        )
 
     # Retarget each source frame once, then interpolate at the simulation rate.
     # This removes the visible 30 FPS -> 100 Hz frame plateaus.
@@ -1205,6 +1224,8 @@ def run(
         )[:20],
         "elapsed_wall_seconds": time.perf_counter() - started,
         "viewer": show_viewer,
+        "camera_follow_enabled": camera_follow_enabled,
+        "camera_mode": "follow_human" if camera_follow_enabled else "fixed",
         "kinematic_pose_reapplied_after_collision_step": bool(collision),
         "note": "Joint rotations are retargeted from keypoint bone directions; twist is underdetermined. MJCF fixes parent-child bone lengths. Foot lock is kinematic preprocessing. Optional leg IK constrains hip/knee/ankle DOFs only and is not dynamics/PD control.",
     }
@@ -1221,6 +1242,7 @@ if __name__ == "__main__":
         args.report,
         args.seconds,
         args.viewer,
+        args.fixed_camera,
         args.collision,
         args.foot_lock,
         args.foot_contact_height,
