@@ -89,25 +89,30 @@ def generate(motion_path: Path, output_path: Path, radius: float) -> None:
     body_elements = {0: root_body}
     for child in range(1, len(BODY_NAMES)):
         parent = int(PARENTS[child])
-        body = ET.SubElement(
-            body_elements[parent],
-            "body",
-            {"name": BODY_NAMES[child], "pos": fmt(local_offsets[child])},
-        )
-        ET.SubElement(body, "joint", {"name": f"{BODY_NAMES[child]}_ball", "type": "ball", "pos": "0 0 0"})
+        parent_body = body_elements[parent]
         offset = local_offsets[child]
         length = float(np.linalg.norm(offset))
         geom_radius = min(radius, max(0.018, 0.32 * length))
+        # The parent-child bone must live in the parent frame. If it is put
+        # inside the child body, a ball-joint rotation rotates the far end of
+        # the capsule away from the parent anchor, creating a visual gap even
+        # though the MJCF joint anchors remain connected.
         ET.SubElement(
-            body,
+            parent_body,
             "geom",
             {
                 "name": f"{BODY_NAMES[child]}_bone",
                 "type": "capsule",
-                "fromto": f"0 0 0 {fmt(-offset)}",
+                "fromto": f"0 0 0 {fmt(offset)}",
                 "size": f"{geom_radius:.6f}",
             },
         )
+        body = ET.SubElement(
+            parent_body,
+            "body",
+            {"name": BODY_NAMES[child], "pos": fmt(offset)},
+        )
+        ET.SubElement(body, "joint", {"name": f"{BODY_NAMES[child]}_ball", "type": "ball", "pos": "0 0 0"})
         ET.SubElement(body, "geom", {"name": f"{BODY_NAMES[child]}_joint", "type": "sphere", "size": f"{radius:.6f}"})
         body_elements[child] = body
 
