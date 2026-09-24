@@ -10,7 +10,7 @@
   "steps": 497,
   "source_frame_reuse_steps": 0,
   "max_commanded_root_step_m": 0.020532673224806786,
-  "max_applied_root_step_m": 0.019764170050621033,
+  "max_applied_root_step_m": 0.020119531080126762,
   "source_ground_offset_m": 0.07994534850120544,
   "source_min_foot_height_m": 0.054999977350234985,
   "duration_seconds": 4.966666666666667,
@@ -23,33 +23,28 @@
   "foot_contact_height_m": 0.055,
   "foot_clearance_m": 0.055,
   "foot_release_height_m": 0.085,
-  "leg_ik_enabled": true,
+  "leg_ik_enabled": false,
   "leg_ik_dofs": 18,
-  "leg_ik_frames": 272,
-  "max_leg_ik_position_error_m": 0.0675821527838707,
-  "max_leg_ik_position_error_frame": 23,
-  "max_leg_ik_position_error_foot": "right_foot",
-  "max_leg_ik_qpos_delta": 0.010332077741622925,
-  "support_ik_rejections": 4,
-  "support_ik_rejection_frames": [
-    5,
-    24,
-    47,
-    66
-  ],
+  "leg_ik_frames": 0,
+  "max_leg_ik_position_error_m": 0.0,
+  "max_leg_ik_position_error_frame": null,
+  "max_leg_ik_position_error_foot": null,
+  "max_leg_ik_qpos_delta": 0.0,
+  "support_ik_rejections": 0,
+  "support_ik_rejection_frames": [],
   "max_acceptable_support_ik_error_m": 0.05,
-  "max_leg_joint_step_rad": 0.07748791014483229,
+  "max_leg_joint_step_rad": 0.06103580584619003,
   "max_leg_frame_step_limit_rad": 0.08,
-  "max_leg_joint_step_frame": 23,
-  "max_leg_joint_step_joint": "left_ankle_ball",
+  "max_leg_joint_step_frame": 11,
+  "max_leg_joint_step_joint": "right_ankle_ball",
   "max_bone_length_error_m": 1.341104507446289e-07,
   "max_post_step_bone_length_error_m": 1.4901161193847656e-07,
   "max_post_step_qpos_drift": 0.0,
   "foot_contact_frames": {
-    "left_foot": 244,
-    "right_foot": 24
+    "left_foot": 0,
+    "right_foot": 0
   },
-  "max_foot_penetration_m": 0.00012099564075469804,
+  "max_foot_penetration_m": 0.028636572957038878,
   "max_foot_anchor_below_ground_m": 0.0,
   "max_foot_anchor_below_ground_by_foot_m": {
     "left_foot": 0.0,
@@ -63,25 +58,25 @@
     "left_foot": null,
     "right_foot": null
   },
-  "max_foot_height_error_m": 0.048908516466617584,
+  "max_foot_height_error_m": 0.0,
   "foot_sliding_distance_m": {
-    "left_foot": 0.15757455138555088,
-    "right_foot": 0.09064120129914954
+    "left_foot": 0.0,
+    "right_foot": 0.0
   },
-  "max_root_correction_m": 0.0004001442575827241,
-  "max_root_correction_step_m": 0.0004001442575827241,
-  "max_root_correction_state_m": 0.06401725858449936,
-  "max_ground_clamp_m": 0.004049651324748993,
-  "max_root_tracking_error_m": 0.08041545003652573,
-  "max_joint_position_error_m": 0.4921417832374573,
+  "max_root_correction_m": 0.0,
+  "max_root_correction_step_m": 0.0,
+  "max_root_correction_state_m": 0.03883058577775955,
+  "max_ground_clamp_m": 0.005501076579093933,
+  "max_root_tracking_error_m": 0.08039361238479614,
+  "max_joint_position_error_m": 0.48796379566192627,
   "max_joint_position_error_joint": "left_wrist",
   "max_joint_position_error_frame": 108,
-  "max_root_velocity_m_s": 1.976416942125289,
-  "max_root_acceleration_m_s2": 90.41094332647862,
-  "max_root_jerk_m_s3": 7649.4241933977855,
-  "max_joint_velocity_rad_s": 7.7487910144832295,
-  "max_joint_acceleration_rad_s2": 433.9489770531739,
-  "max_joint_jerk_rad_s3": 43878.70204327907,
+  "max_root_velocity_m_s": 2.0119530711850437,
+  "max_root_acceleration_m_s2": 92.69711886900684,
+  "max_root_jerk_m_s3": 9122.332673436977,
+  "max_joint_velocity_rad_s": 6.103580584619003,
+  "max_joint_acceleration_rad_s2": 53.42461016258908,
+  "max_joint_jerk_rad_s3": 6773.518274110633,
   "smoothness_metrics": {
     "source_30fps": {
       "root": {
@@ -109,30 +104,30 @@
     },
     "applied_100hz": {
       "root": {
-        "max_velocity": 1.976416942125289,
-        "max_acceleration": 90.41094332647862,
-        "max_jerk": 7649.4241933977855
+        "max_velocity": 2.0119530711850437,
+        "max_acceleration": 92.69711886900684,
+        "max_jerk": 9122.332673436977
       },
       "joints": {
-        "max_joint_velocity_rad_s": 7.7487910144832295,
-        "max_joint_acceleration_rad_s2": 433.9489770531739,
-        "max_joint_jerk_rad_s3": 43878.70204327907
+        "max_joint_velocity_rad_s": 6.103580584619003,
+        "max_joint_acceleration_rad_s2": 53.42461016258908,
+        "max_joint_jerk_rad_s3": 6773.518274110633
       },
       "root_correction": {
-        "max_velocity": 0.6091575448406403,
-        "max_acceleration": 51.11602593433436,
-        "max_jerk": 7643.520832120378
+        "max_velocity": 0.5501091480255127,
+        "max_acceleration": 54.75342273712158,
+        "max_jerk": 9117.0072555542
       },
       "feet": {
         "left_foot": {
-          "max_velocity": 2.49622710379704,
-          "max_acceleration": 90.80558809005962,
-          "max_jerk": 10887.972556446644
+          "max_velocity": 2.6422427270564524,
+          "max_acceleration": 95.45904310436832,
+          "max_jerk": 9079.92987778881
         },
         "right_foot": {
-          "max_velocity": 2.754927459547083,
-          "max_acceleration": 121.81125381393578,
-          "max_jerk": 13048.56641859319
+          "max_velocity": 2.4118416121238724,
+          "max_acceleration": 92.66997557827392,
+          "max_jerk": 8947.73063072464
         }
       }
     }
@@ -147,234 +142,86 @@
       ]
     },
     {
-      "step": 17,
-      "source_frame": 5,
+      "step": 67,
+      "source_frame": 20,
       "from": [
         "left_foot"
       ],
-      "to": []
-    },
-    {
-      "step": 67,
-      "source_frame": 20,
-      "from": [],
       "to": [
+        "left_foot",
         "right_foot"
       ]
     },
     {
-      "step": 80,
-      "source_frame": 24,
+      "step": 77,
+      "source_frame": 23,
       "from": [
+        "left_foot",
         "right_foot"
       ],
-      "to": []
+      "to": [
+        "right_foot"
+      ]
     },
     {
       "step": 134,
       "source_frame": 40,
-      "from": [],
+      "from": [
+        "right_foot"
+      ],
       "to": [
-        "left_foot"
+        "left_foot",
+        "right_foot"
       ]
     },
     {
-      "step": 157,
-      "source_frame": 47,
+      "step": 150,
+      "source_frame": 45,
       "from": [
-        "left_foot"
+        "left_foot",
+        "right_foot"
       ],
-      "to": []
+      "to": [
+        "left_foot"
+      ]
     },
     {
       "step": 210,
       "source_frame": 63,
-      "from": [],
+      "from": [
+        "left_foot"
+      ],
       "to": [
+        "left_foot",
         "right_foot"
       ]
     },
     {
-      "step": 221,
-      "source_frame": 66,
+      "step": 224,
+      "source_frame": 67,
       "from": [
+        "left_foot",
         "right_foot"
       ],
-      "to": []
+      "to": [
+        "right_foot"
+      ]
     },
     {
       "step": 290,
       "source_frame": 87,
-      "from": [],
+      "from": [
+        "right_foot"
+      ],
       "to": [
-        "left_foot"
+        "left_foot",
+        "right_foot"
       ]
     }
   ],
-  "pre_post_ik_jump_metrics": [
-    {
-      "step": 24,
-      "source_frame": 7,
-      "kind": "swing",
-      "foot": "right_foot",
-      "max_abs_qpos_delta": 0.010332077741622925,
-      "root_translation_delta_m": 0.0
-    },
-    {
-      "step": 26,
-      "source_frame": 7,
-      "kind": "swing",
-      "foot": "right_foot",
-      "max_abs_qpos_delta": 0.010003730654716492,
-      "root_translation_delta_m": 0.0
-    },
-    {
-      "step": 22,
-      "source_frame": 6,
-      "kind": "swing",
-      "foot": "right_foot",
-      "max_abs_qpos_delta": 0.009922593832015991,
-      "root_translation_delta_m": 9.313225746154785e-10
-    },
-    {
-      "step": 25,
-      "source_frame": 7,
-      "kind": "swing",
-      "foot": "right_foot",
-      "max_abs_qpos_delta": 0.009643912315368652,
-      "root_translation_delta_m": 0.0
-    },
-    {
-      "step": 23,
-      "source_frame": 6,
-      "kind": "swing",
-      "foot": "right_foot",
-      "max_abs_qpos_delta": 0.009186729788780212,
-      "root_translation_delta_m": 0.0
-    },
-    {
-      "step": 27,
-      "source_frame": 8,
-      "kind": "swing",
-      "foot": "right_foot",
-      "max_abs_qpos_delta": 0.009080208837985992,
-      "root_translation_delta_m": 0.0
-    },
-    {
-      "step": 20,
-      "source_frame": 6,
-      "kind": "swing",
-      "foot": "right_foot",
-      "max_abs_qpos_delta": 0.008623048663139343,
-      "root_translation_delta_m": 0.0
-    },
-    {
-      "step": 28,
-      "source_frame": 8,
-      "kind": "swing",
-      "foot": "right_foot",
-      "max_abs_qpos_delta": 0.008458614349365234,
-      "root_translation_delta_m": 1.4901161193847656e-08
-    },
-    {
-      "step": 21,
-      "source_frame": 6,
-      "kind": "swing",
-      "foot": "right_foot",
-      "max_abs_qpos_delta": 0.008121207356452942,
-      "root_translation_delta_m": 1.4901161193847656e-08
-    },
-    {
-      "step": 29,
-      "source_frame": 8,
-      "kind": "swing",
-      "foot": "right_foot",
-      "max_abs_qpos_delta": 0.007125817239284515,
-      "root_translation_delta_m": 0.0
-    },
-    {
-      "step": 162,
-      "source_frame": 48,
-      "kind": "swing",
-      "foot": "right_foot",
-      "max_abs_qpos_delta": 0.006965205073356628,
-      "root_translation_delta_m": 7.450580596923828e-09
-    },
-    {
-      "step": 18,
-      "source_frame": 5,
-      "kind": "swing",
-      "foot": "right_foot",
-      "max_abs_qpos_delta": 0.006840020418167114,
-      "root_translation_delta_m": 0.0
-    },
-    {
-      "step": 160,
-      "source_frame": 48,
-      "kind": "swing",
-      "foot": "right_foot",
-      "max_abs_qpos_delta": 0.006729871034622192,
-      "root_translation_delta_m": 0.0
-    },
-    {
-      "step": 19,
-      "source_frame": 5,
-      "kind": "swing",
-      "foot": "right_foot",
-      "max_abs_qpos_delta": 0.006583645939826965,
-      "root_translation_delta_m": 9.313225746154785e-10
-    },
-    {
-      "step": 164,
-      "source_frame": 49,
-      "kind": "swing",
-      "foot": "right_foot",
-      "max_abs_qpos_delta": 0.006228290498256683,
-      "root_translation_delta_m": 7.450580596923828e-09
-    },
-    {
-      "step": 163,
-      "source_frame": 48,
-      "kind": "swing",
-      "foot": "right_foot",
-      "max_abs_qpos_delta": 0.005760401487350464,
-      "root_translation_delta_m": 0.0
-    },
-    {
-      "step": 161,
-      "source_frame": 48,
-      "kind": "swing",
-      "foot": "right_foot",
-      "max_abs_qpos_delta": 0.0057013630867004395,
-      "root_translation_delta_m": 0.0
-    },
-    {
-      "step": 158,
-      "source_frame": 47,
-      "kind": "swing",
-      "foot": "right_foot",
-      "max_abs_qpos_delta": 0.005452334880828857,
-      "root_translation_delta_m": 0.0
-    },
-    {
-      "step": 30,
-      "source_frame": 9,
-      "kind": "swing",
-      "foot": "right_foot",
-      "max_abs_qpos_delta": 0.005441967397928238,
-      "root_translation_delta_m": 1.4901161193847656e-08
-    },
-    {
-      "step": 152,
-      "source_frame": 45,
-      "kind": "swing",
-      "foot": "right_foot",
-      "max_abs_qpos_delta": 0.0052764564752578735,
-      "root_translation_delta_m": 0.0
-    }
-  ],
-  "elapsed_wall_seconds": 13.816736026998115,
-  "viewer": false,
+  "pre_post_ik_jump_metrics": [],
+  "elapsed_wall_seconds": 7.792328998999437,
+  "viewer": true,
   "kinematic_pose_reapplied_after_collision_step": false,
   "note": "Joint rotations are retargeted from keypoint bone directions; twist is underdetermined. MJCF fixes parent-child bone lengths. Foot lock is kinematic preprocessing. Optional leg IK constrains hip/knee/ankle DOFs only and is not dynamics/PD control."
 }

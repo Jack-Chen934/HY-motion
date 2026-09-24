@@ -1,6 +1,8 @@
 __pycache__/
 *.py[cod]
 *.log
+assets/generated/
+motions/cache/*.npz
 reports/*_viewer_test.json
 reports/*_short.json
 reports/stage_a_viewer.json
