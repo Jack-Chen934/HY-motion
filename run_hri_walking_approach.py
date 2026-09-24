@@ -140,6 +140,14 @@ def parse_args() -> argparse.Namespace:
               "hri-replay replays a saved strict trajectory."),
     )
     parser.add_argument("--handover-hold-seconds", type=float, default=HANDOVER_TAIL_SECONDS)
+    parser.add_argument(
+        "--handover-base-x", type=float, default=float(HANDOVER_ROBOT_BASE_POS[0]),
+        help="Robot base X position for handover and dynamic-handover profiles.",
+    )
+    parser.add_argument(
+        "--handover-base-y", type=float, default=float(HANDOVER_ROBOT_BASE_POS[1]),
+        help="Robot base Y position for handover and dynamic-handover profiles.",
+    )
     parser.add_argument("--max-joint-speed", type=float, default=MAX_JOINT_SPEED)
     parser.add_argument("--max-tcp-speed", type=float, default=MAX_TCP_SPEED)
     return parser.parse_args()
@@ -773,7 +781,7 @@ def run_handover(args: argparse.Namespace) -> dict[str, object]:
     effective_ik_samples = min(args.ik_max_samples, 4) if args.viewer else args.ik_max_samples
     effective_ik_solver_iters = min(args.ik_max_solver_iters, 40) if args.viewer else args.ik_max_solver_iters
     backend, backend_name = select_backend(args.backend)
-    robot_base = HANDOVER_ROBOT_BASE_POS.copy()
+    robot_base = np.array((args.handover_base_x, args.handover_base_y, 0.0), dtype=np.float32)
 
     root_points = points[:, 0] + HUMAN_OFFSET
     min_base_root_distance = float(np.min(np.linalg.norm(root_points[:, :2] - robot_base[:2], axis=1)))
@@ -1273,7 +1281,7 @@ def run_dynamic_handover(args: argparse.Namespace) -> dict[str, object]:
     effective_ik_samples = min(args.ik_max_samples, 4) if args.viewer else args.ik_max_samples
     effective_ik_solver_iters = min(args.ik_max_solver_iters, 40) if args.viewer else args.ik_max_solver_iters
     backend, backend_name = select_backend(args.backend)
-    robot_base = HANDOVER_ROBOT_BASE_POS.copy()
+    robot_base = np.array((args.handover_base_x, args.handover_base_y, 0.0), dtype=np.float32)
 
     root_points = points[:, 0] + HUMAN_OFFSET
     min_base_root_distance = float(np.min(np.linalg.norm(root_points[:, :2] - robot_base[:2], axis=1)))
@@ -1924,7 +1932,7 @@ def run(args: argparse.Namespace) -> dict[str, object]:
             layout_report = WORKSPACE / "genesis-human-experiment/reports/r1pro_layout_diagnostic.json"
         layout_args = argparse.Namespace(
             motion=args.motion, human_model=args.human_model, robot_urdf=args.robot_urdf,
-            report=layout_report, base_x=-0.55, base_y=-3.00, seconds=args.seconds,
+            report=layout_report, base_x=args.handover_base_x, base_y=args.handover_base_y, seconds=args.seconds,
             viewer=args.viewer, backend="cpu" if args.backend == "auto" else args.backend,
             min_clearance=0.25, sample_hz=10.0,
         )

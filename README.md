@@ -255,15 +255,16 @@ AABB 间隙是保守的宽相位指标；候选站位通过后仍需可视化检
   run_hri_walking_approach.py \
   --profile dynamic-handover \
   --backend cpu \
+  --handover-base-x -0.65 \
+  --handover-base-y -3.0 \
   --report reports/dynamic_handover_full.json
 ```
 
-本次完整实验已注册 weld，双指接触步数分别为 `687` 和 `231`，转移时刻约
-`35.24 s`，撤回完成，物体最大 TCP 相对误差约 `0.045 m`，掉落量约 `0.030 m`。
-但当前站位在交接阶段产生 `47` 个保守人体代理碰撞采样，因此报告最终 phase 为
-`SAFETY_ABORT`；`dynamic_transfer_status` 仍为 `success`，表示物体确实完成了动态
-约束转移和撤回。这说明下一步应先重新优化机器人站位和手部接近方向，再把安全验收
-从“动力学转移成功”提升到“转移且零人体碰撞”。
+通过 `--handover-base-x/-y` 可以筛选机器人站位。已验证的安全可达候选是
+`(-0.65, -3.0, 0.0)`：运行时 weld 注册成功，左右手指接触步数为 `160`/`97`，
+撤回完成，`collision_steps=0`，IK 失败为 `0`，最终 phase 为 `SUCCESS`，物体掉落量
+约 `0.036 m`。旧默认位置仍保留，便于复现原有运动学基线；动态实验建议显式使用该
+安全站位并把结果写入单独报告。
 
 ### Handover 可视化
 
