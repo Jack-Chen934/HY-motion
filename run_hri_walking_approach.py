@@ -35,7 +35,10 @@ WORKSPACE = Path(__file__).resolve().parents[1]
 DEFAULT_MOTION = WORKSPACE / "genesis-human-experiment/motions/prepared/final_full_cooperation_seed2026.npz"
 DEFAULT_HUMAN_MODEL = WORKSPACE / "genesis-human-experiment/assets/human_22ball.xml"
 DEFAULT_WOODEN_DIR = WORKSPACE / "HY-Motion-1.0/scripts/gradio/static/assets/dump_wooden"
-DEFAULT_ROBOT_URDF = Path("/home/sorry/python_ws/gaze_vr_isaaclab/src/gaze_vr_isaaclab/assets/r1_pro/r1pro.urdf")
+DEFAULT_ROBOT_URDF = (
+    WORKSPACE.parent / "gaze_vr_isaaclab" / "src" / "gaze_vr_isaaclab"
+    / "assets" / "r1_pro" / "r1pro.urdf"
+)
 DEFAULT_REPORT = WORKSPACE / "genesis-human-experiment/reports/hri_walking_approach.json"
 DEFAULT_OBJ = WORKSPACE / "genesis-human-experiment/assets/generated/hymotion_mesh_initial.obj"
 DEFAULT_TRAJECTORY = WORKSPACE / "genesis-human-experiment/motions/cache/hri_episode_robot.npz"
@@ -130,7 +133,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--safety-check-hz", type=float, default=20.0, help="Rate for Python-side contact and distance checks.")
     parser.add_argument("--backend", choices=("auto", "cpu", "gpu"), default="auto")
     parser.add_argument(
-        "--profile", choices=("handover", "strict", "smooth-viewer", "human-viewer", "hri-viewer", "hri-replay"), default="handover",
+        "--profile", choices=("handover", "strict", "smooth-viewer", "human-viewer", "hri-viewer", "hri-replay", "layout-diagnostic"), default="handover",
         help=("handover runs the redesigned object-transfer task; strict runs the legacy empty-hand gate; "
               "smooth-viewer is a controlled HRI preview; "
               "human-viewer shows only the human; hri-viewer shows a static robot preview; "
@@ -1314,6 +1317,19 @@ def run_visual_profile(args: argparse.Namespace, include_robot: bool) -> dict[st
 
 
 def run(args: argparse.Namespace) -> dict[str, object]:
+    if args.profile == "layout-diagnostic":
+        from diagnose_hri_layout import run as run_layout_diagnostic
+
+        layout_report = args.report
+        if layout_report == DEFAULT_REPORT:
+            layout_report = WORKSPACE / "genesis-human-experiment/reports/r1pro_layout_diagnostic.json"
+        layout_args = argparse.Namespace(
+            motion=args.motion, human_model=args.human_model, robot_urdf=args.robot_urdf,
+            report=layout_report, base_x=-0.55, base_y=-3.00, seconds=args.seconds,
+            viewer=args.viewer, backend="cpu" if args.backend == "auto" else args.backend,
+            min_clearance=0.25, sample_hz=10.0,
+        )
+        return run_layout_diagnostic(layout_args)
     if args.profile == "handover":
         return run_handover(args)
     if args.profile == "hri-replay":

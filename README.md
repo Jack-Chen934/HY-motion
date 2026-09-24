@@ -216,6 +216,32 @@ OBJ，仅用于 Genesis 分配视觉顶点缓冲；它属于运行时缓存，�
 `36.7 s`（包含人体稳定、夹爪闭合、验证和撤回阶段）。这是根据实际 TCP 收敛时间去掉旧版多余等待后的时序；不能再缩短到
 机械臂尚未到达物体时就闭合夹爪。
 
+### R1 Pro 静态布局诊断
+
+在改动机器人站位或进入动态交接之前，先运行固定底座布局诊断：
+
+```bash
+export QD_TMP_DIR=/tmp/hy_genesis_qd
+export XDG_CACHE_HOME=/tmp/hy_genesis_cache
+export NUMBA_CACHE_DIR=/tmp/hy_genesis_numba
+export NUMBA_DISABLE_CACHING=1
+
+/var/local/sorry/conda/envs/tavis/bin/python \
+  diagnose_hri_layout.py \
+  --base-x -0.55 --base-y -3.00 \
+  --report reports/r1pro_layout_diagnostic.json
+```
+
+诊断运行完整动作片段，以 22 关节人体代理和固定中性姿态的 R1 Pro URDF 实测每步
+AABB 间隙、最近间隙时刻、机器人与人体的碰撞采样以及底座到人体根部距离。报告同时
+记录从 URDF 读取的左夹爪几何、TCP 偏移和开/闭夹爪间隙。`layout_pass` 要求全过程
+人体代理 AABB 间隙至少 `0.25 m` 且没有采样接触。
+
+这是布局筛选，不验证机械臂到达手部的 IK，也不验证手指接触、抓取或控制权转移。
+AABB 间隙是保守的宽相位指标；候选站位通过后仍需可视化检查，后续再单独做末端
+可达性与真实接触阶段。默认机器人资产从相邻的 `gaze_vr_isaaclab` 仓库读取，路径
+由工作区结构计算；也可以通过 `--robot-urdf` 指定资产副本。
+
 ### Handover 可视化
 
 在有图形显示的本地终端运行。viewer 模式使用至少 30 Hz 的视觉步长；CPU 软件
