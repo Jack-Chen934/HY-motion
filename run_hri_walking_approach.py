@@ -133,8 +133,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--safety-check-hz", type=float, default=20.0, help="Rate for Python-side contact and distance checks.")
     parser.add_argument("--backend", choices=("auto", "cpu", "gpu"), default="auto")
     parser.add_argument(
-        "--profile", choices=("handover", "strict", "smooth-viewer", "human-viewer", "hri-viewer", "hri-replay", "layout-diagnostic"), default="handover",
-        help=("handover runs the redesigned object-transfer task; strict runs the legacy empty-hand gate; "
+        "--profile", choices=("handover", "dynamic-handover", "strict", "smooth-viewer", "human-viewer", "hri-viewer", "hri-replay", "layout-diagnostic"), default="handover",
+        help=("handover runs the kinematic baseline; dynamic-handover runs the runtime-weld dynamic transfer; strict runs the legacy empty-hand gate; "
               "smooth-viewer is a controlled HRI preview; "
               "human-viewer shows only the human; hri-viewer shows a static robot preview; "
               "hri-replay replays a saved strict trajectory."),
@@ -636,9 +636,26 @@ def entity_aabb_distance(first: object, second: object) -> float:
     return best
 
 
+
+def _get_contacts_compat(scene: object) -> dict[str, object]:
+    """Read contacts through Genesis's stable non-zerocopy path.
+
+    Genesis 1.3.3 with the installed torch 2.7 build can pass an int32 gather
+    index through the zerocopy path and raise ``Expected dtype int64``.  The
+    kernel path returns the same contact fields without that failure.
+    """
+    previous = getattr(gs, "use_zerocopy", None)
+    try:
+        gs.use_zerocopy = False
+        return scene.sim.rigid_solver.collider.get_contacts(as_tensor=False, to_torch=False)
+    finally:
+        if previous is not None:
+            gs.use_zerocopy = previous
+
+
 def contact_count(scene: object, first: object, second: object) -> int:
     try:
-        contacts = scene.sim.rigid_solver.collider.get_contacts(as_tensor=False, to_torch=False)
+        contacts = _get_contacts_compat(scene)
         link_a = np.asarray(contacts["link_a"]).reshape(-1)
         link_b = np.asarray(contacts["link_b"]).reshape(-1)
         first_range = (int(first.link_start), int(first.link_end))
@@ -651,6 +668,21 @@ def contact_count(scene: object, first: object, second: object) -> int:
     except Exception:
         return 0
 
+
+
+def link_contact_count(scene: object, first_link: object, second: object) -> int:
+    """Count contacts involving one specific link and an entity."""
+    try:
+        contacts = _get_contacts_compat(scene)
+        link_a = np.asarray(contacts["link_a"]).reshape(-1)
+        link_b = np.asarray(contacts["link_b"]).reshape(-1)
+        first_idx = int(first_link.idx)
+        second_range = (int(second.link_start), int(second.link_end))
+        first_hit = (link_a == first_idx) & (link_b >= second_range[0]) & (link_b < second_range[1])
+        second_hit = (link_b == first_idx) & (link_a >= second_range[0]) & (link_a < second_range[1])
+        return int(np.count_nonzero(first_hit | second_hit))
+    except Exception:
+        return 0
 
 def configure_robot(robot: object) -> tuple[np.ndarray, np.ndarray, np.ndarray, object, np.ndarray]:
     left_dofs, left_qs = joint_indices(robot, tuple(f"left_arm_joint{number}" for number in range(1, 8)))
@@ -1181,6 +1213,573 @@ def run_handover(args: argparse.Namespace) -> dict[str, object]:
     return report
 
 
+def run_dynamic_handover(args: argparse.Namespace) -> dict[str, object]:
+    """Run the independent dynamic object handover experiment.
+
+    The prop is kinematic only while the human holds it. After both physical
+    finger links contact the prop continuously, Genesis registers a runtime
+    weld constraint and the human-side pose updates stop.
+    """
+    if args.handover_hold_seconds < 0.0 or args.max_joint_speed <= 0.0 or args.max_tcp_speed <= 0.0:
+        raise ValueError("handover hold and speed limits must be non-negative/positive")
+    if args.progress_hz < 0.0:
+        raise ValueError("progress-hz must be non-negative")
+    motion_path = args.motion.resolve()
+    human_model = args.human_model.resolve()
+    wooden_dir = args.wooden_dir.resolve()
+    robot_urdf = args.robot_urdf.resolve()
+    report_path = args.report.resolve()
+    for required in (motion_path, human_model, robot_urdf, wooden_dir / "v_template.bin"):
+        if not required.exists():
+            raise FileNotFoundError(required)
+
+    vertices, faces, mesh_roots, hand_keypoints, mesh_fps = load_wooden_motion(motion_path, wooden_dir)
+    points, fps = prepare_points(motion_path)
+    if abs(mesh_fps - fps) > 1e-4:
+        raise ValueError("Motion FPS differs between WoodenMesh and keypoint inputs")
+    hand_index = BODY_NAMES.index(HAND_NAME)
+    hand_parent_index = BODY_NAMES.index(HAND_PARENT_NAME)
+    pause_start, pause_end = detect_pause_window(points, fps, hand_index, HAND_SPEED_THRESHOLD, MIN_PAUSE_SECONDS)
+    motion_duration = (len(points) - 1) / fps
+    requested_duration = motion_duration if args.seconds is None else min(args.seconds, motion_duration)
+    pause_start_s = pause_start / fps
+    schedule = handover_schedule(motion_duration, pause_start_s, args.handover_hold_seconds)
+    if requested_duration < pause_start_s:
+        raise ValueError("Requested duration ends before the detected interaction window")
+    # Full-mesh 100 Hz playback is useful for headless validation but is too
+    # expensive for the software-rendered viewer. Keep the same continuous
+    # schedule and use a 30 Hz visual step when a viewer is requested.
+    simulation_hz = max(args.viewer_hz, 30.0) if args.viewer else 1.0 / SIM_DT
+    simulation_dt = 1.0 / simulation_hz
+    total_duration = schedule["task_end"] if args.seconds is None else min(args.seconds, schedule["task_end"])
+    steps = int(np.ceil(total_duration / simulation_dt))
+    truncated = total_duration + 1e-6 < schedule["task_end"]
+    if truncated:
+        print(
+            "[handover] WARNING: run is truncated at "
+            f"{total_duration:.2f}s; full handover needs {schedule['task_end']:.2f}s "
+            f"(GRIPPER_CLOSE starts at {schedule['slow_end']:.2f}s).",
+            flush=True,
+        )
+    camera_mode = "fixed" if args.fixed_camera else args.camera_mode
+    # In a viewer run the scene itself advances at the display cadence. Keep
+    # one solve per displayed frame, but use a deliberately small solver
+    # budget: the default strict IK budget is excessive for interactive
+    # rendering and is a major source of apparent slow motion/stutter.
+    effective_ik_hz = simulation_hz if args.viewer else min(args.ik_hz, 20.0)
+    ik_interval = step_interval_for_rate(effective_ik_hz, simulation_dt)
+    viewer_interval = step_interval_for_rate(simulation_hz, simulation_dt)
+    safety_interval = step_interval_for_rate(args.safety_check_hz, simulation_dt)
+    effective_ik_samples = min(args.ik_max_samples, 4) if args.viewer else args.ik_max_samples
+    effective_ik_solver_iters = min(args.ik_max_solver_iters, 40) if args.viewer else args.ik_max_solver_iters
+    backend, backend_name = select_backend(args.backend)
+    robot_base = HANDOVER_ROBOT_BASE_POS.copy()
+
+    root_points = points[:, 0] + HUMAN_OFFSET
+    min_base_root_distance = float(np.min(np.linalg.norm(root_points[:, :2] - robot_base[:2], axis=1)))
+    if min_base_root_distance < MIN_BASE_ROOT_DISTANCE:
+        raise RuntimeError(
+            f"handover layout rejected: robot base is {min_base_root_distance:.3f} m from the human root; "
+            f"minimum is {MIN_BASE_ROOT_DISTANCE:.3f} m"
+        )
+
+    write_obj(args.mesh_obj.resolve(), vertices[0], faces)
+    rest_basis = rotation_from_basis(points[0])
+    gs.init(backend=backend, precision="32")
+    scene = gs.Scene(
+        # The human and pre-grasp prop are kinematic.  Keep gravity disabled
+        # for this staged task so the free-base robot remains at its layout
+        # pose while its articulated arm is still dynamically controllable.
+        sim_options=gs.options.SimOptions(dt=simulation_dt, gravity=(0.0, 0.0, -9.81)),
+        rigid_options=gs.options.RigidOptions(
+            enable_collision=not args.no_collision, box_box_detection=True, noslip_iterations=5,
+            max_dynamic_constraints=8,
+        ),
+        viewer_options=gs.options.ViewerOptions(
+            res=(1280, 800), refresh_rate=int(round(simulation_hz)), realtime_factor=1.0,
+            camera_pos=(2.8, -5.4, 2.5), camera_lookat=(0.0, -1.5, 0.95), camera_fov=42,
+        ),
+        show_viewer=args.viewer,
+    )
+    scene.add_entity(gs.morphs.Plane(), name="ground")
+    human = scene.add_entity(
+        gs.morphs.MJCF(file=str(human_model), requires_jac_and_IK=False), name="handover_human_proxy"
+    )
+    mesh = scene.add_entity(
+        gs.morphs.Mesh(
+            file=str(args.mesh_obj.resolve()), fixed=True, visualization=True, collision=False,
+            enable_custom_vverts=True, decimate=False, convexify=False, file_meshes_are_zup=True,
+        ),
+        name="handover_human_visual",
+    )
+    robot = scene.add_entity(
+        gs.morphs.URDF(
+            file=str(robot_urdf), pos=tuple(robot_base), fixed=True,
+            merge_fixed_links=False, align=False,
+        ),
+        material=gs.materials.Rigid(friction=2.0),
+        name="r1_pro_handover",
+    )
+    object_entity = scene.add_entity(
+        # Before grasp verification the object is a kinematic hand-held
+        # prop.  A dynamic body would fall under gravity between explicit
+        # hand-follow updates because the human itself is kinematic.  After
+        # verification the prop is explicitly driven by the robot TCP.
+        gs.morphs.Box(size=OBJECT_SIZE, pos=(0.0, 0.0, 1.0), fixed=False),
+        material=gs.materials.Rigid(friction=2.0),
+        surface=gs.surfaces.Default(color=(0.10, 0.35, 0.85, 1.0)),
+        name="handover_object",
+    )
+    scene.build()
+    if mesh.n_vverts != vertices.shape[1]:
+        raise RuntimeError(f"Genesis visual vertex count mismatch: {mesh.n_vverts} != {vertices.shape[1]}")
+
+    free_start = human.get_joint(name="pelvis_free").q_start
+    qposes = np.stack([qpos_for_frame(frame, points[0], rest_basis, human) for frame in points]).astype(np.float32)
+    qposes = make_quaternion_sequence_continuous(qposes)
+    qposes[:, free_start : free_start + 3] += HUMAN_OFFSET
+    cubic_at = build_cubic_qpos_interpolator(qposes, fps)
+    initial_qpos = cubic_at(0.0)
+    initial_mesh_offset = initial_qpos[free_start : free_start + 3] - mesh_roots[0]
+    if args.viewer:
+        mesh.set_vverts(vertices[0] + initial_mesh_offset)
+    human.set_qpos(initial_qpos, zero_velocity=True)
+    left_dofs, left_qs, hold_dofs, end_effector, gripper_dofs = configure_robot(robot)
+    hold_targets = as_numpy(robot.get_dofs_position())[hold_dofs].copy()
+    initial_tcp = tcp_position(end_effector)
+    tcp_command_target = initial_tcp.copy()
+    arm_target = LEFT_ARM_START.copy()
+    initial_object_position, initial_object_quat, _ = palm_pose_in_hand(hand_keypoints[0])
+    object_entity.set_pos(
+        initial_object_position + HUMAN_OFFSET + OBJECT_HAND_OFFSET,
+        relative=False,
+        zero_velocity=True,
+    )
+    object_entity.set_quat(initial_object_quat, relative=False, zero_velocity=True)
+    left_finger1 = robot.get_link("left_gripper_finger_link1")
+    left_finger2 = robot.get_link("left_gripper_finger_link2")
+    object_link = object_entity.links[0]
+    left_finger_link_indices = (int(left_finger1.idx), int(left_finger2.idx))
+    object_link_idx = int(object_link.idx)
+
+    if args.viewer and camera_mode == "follow":
+        scene.viewer.follow_entity(robot, fixed_axis=(None, None, None), smoothing=0.95, fix_orientation=False)
+
+    phase = "RESET"
+    phase_times: dict[str, float] = {"RESET": 0.0}
+    ik_calls = 0
+    ik_failures = 0
+    last_ik_error: str | None = None
+    first_ik_failure_time: float | None = None
+    consecutive_ik_failures = 0
+    max_consecutive_ik_failures = 0
+    max_ik_error = 0.0
+    max_tcp_command_speed = 0.0
+    max_joint_command_speed = 0.0
+    min_distance = float("inf")
+    min_pre_handover_distance = float("inf")
+    collision_steps = 0
+    object_robot_contacts = 0
+    object_human_contacts = 0
+    left_finger_contact_steps = 0
+    right_finger_contact_steps = 0
+    robot_contact_steps = 0
+    human_object_contact_after_transfer = 0
+    max_relative_object_tcp_error = 0.0
+    min_object_finger_gap_distance = float("inf")
+    object_drop_m = 0.0
+    weld_constraint_registered = False
+    weld_constraint_error: str | None = None
+    transfer_time_s: float | None = None
+    transfer_object_position = None
+    finger_contact_stable_steps = 0
+    min_object_tcp_distance = float("inf")
+    final_object_tcp_distance = float("inf")
+    min_object_link_distance = float("inf")
+    min_object_wrist_distance = float("inf")
+    min_object_index_distance = float("inf")
+    min_object_thumb_distance = float("inf")
+    min_object_palm_distance = float("inf")
+    hand_diagnostics: list[dict[str, object]] = []
+    min_tcp_target_distance = float("inf")
+    min_link_target_distance = float("inf")
+    tcp_diagnostics: list[dict[str, object]] = []
+    last_desired_tcp = initial_tcp.copy()
+    last_diagnostic_time = -float("inf")
+    grasp_stable_steps = 0
+    grasp_verified = False
+    control_transferred = False
+    release_verified = False
+    retreat_completed = False
+    previous_arm_target = arm_target.copy()
+    previous_root = None
+    max_root_step = 0.0
+    safety_checks = 0
+    mesh_updates = 0
+    viewer_updates = 0
+    trajectory_times: list[float] = []
+    trajectory_human_qpos: list[np.ndarray] = []
+    trajectory_robot_qpos: list[np.ndarray] = []
+    started = time.perf_counter()
+    next_progress_time = 0.0
+
+    def set_phase(new_phase: str, time_seconds: float) -> None:
+        nonlocal phase
+        if phase != new_phase:
+            phase = new_phase
+            phase_times.setdefault(new_phase, time_seconds)
+            print(f"[dynamic-handover] sim_time={time_seconds:6.2f}s phase={new_phase}", flush=True)
+
+    for step in range(steps + 1):
+        time_seconds = min(step * simulation_dt, total_duration)
+        source_position = min(time_seconds * fps, len(points) - 1)
+        frame_points = interpolate_points(points, source_position)
+        frame_hand_keypoints = interpolate_points(hand_keypoints, source_position)
+        qpos = cubic_at(min(time_seconds, motion_duration))
+        human.set_qpos(qpos, zero_velocity=True)
+        if previous_root is not None:
+            max_root_step = max(max_root_step, float(np.linalg.norm(qpos[free_start : free_start + 3] - previous_root)))
+        previous_root = qpos[free_start : free_start + 3].copy()
+        hand_world = frame_points[hand_index] + HUMAN_OFFSET
+        object_hand_position, object_hand_quat, hand_pose_diagnostics = palm_pose_in_hand(frame_hand_keypoints)
+        object_hand_position = object_hand_position + HUMAN_OFFSET + OBJECT_HAND_OFFSET
+        if not control_transferred:
+            object_entity.set_pos(object_hand_position, relative=False, zero_velocity=True)
+            object_entity.set_quat(object_hand_quat, relative=False, zero_velocity=True)
+        object_position = as_numpy(object_entity.get_pos(relative=False)).reshape(3)
+        robot_position = robot_base
+
+        if time_seconds < pause_start_s:
+            set_phase("HUMAN_WALK_REACH", time_seconds)
+        elif time_seconds < schedule["stable_start"]:
+            set_phase("HUMAN_HAND_STABLE", time_seconds)
+        elif time_seconds < schedule["pregrasp_end"]:
+            set_phase("ROBOT_PREGRASP_APPROACH", time_seconds)
+        elif time_seconds < schedule["slow_end"]:
+            set_phase("ROBOT_SLOW_APPROACH", time_seconds)
+        elif time_seconds < schedule["grip_end"]:
+            set_phase("GRIPPER_CLOSE", time_seconds)
+        elif time_seconds < schedule["verify_end"]:
+            set_phase("GRASP_VERIFY", time_seconds)
+        else:
+            set_phase("ROBOT_RETREAT", time_seconds)
+
+        active_ik = phase in ("ROBOT_PREGRASP_APPROACH", "ROBOT_SLOW_APPROACH", "GRIPPER_CLOSE", "GRASP_VERIFY")
+        if active_ik and step % ik_interval == 0:
+            # The URDF TCP is offset from the physical finger gap. Aim the
+            # TCP so the midpoint between the two collision fingers reaches
+            # the object center; using TCP-to-object distance alone misses
+            # the real gripper geometry by roughly 0.2 m on R1 Pro.
+            finger_midpoint = 0.5 * (
+                as_numpy(left_finger1.get_pos(relative=False)).reshape(3)
+                + as_numpy(left_finger2.get_pos(relative=False)).reshape(3)
+            )
+            current_tcp = tcp_position(end_effector)
+            finger_to_tcp = finger_midpoint - current_tcp
+            desired_gap = robot_side_target(object_position, robot_position,
+                                             PREGRASP_OFFSET_M if phase == "ROBOT_PREGRASP_APPROACH" else GRASP_OFFSET_M)
+            desired_tcp = desired_gap - finger_to_tcp
+            last_desired_tcp = desired_tcp.copy()
+            tcp_command_target = rate_limit_vector(tcp_command_target, desired_tcp, args.max_tcp_speed * simulation_dt)
+            ik_calls += 1
+            try:
+                solved_qpos, ik_error = robot.inverse_kinematics(
+                    link=end_effector, pos=tcp_command_target, quat=GRIPPER_QUAT,
+                    local_point=GRIPPER_TCP_LOCAL, init_qpos=robot.get_qpos(),
+                    dofs_idx_local=left_dofs, rot_mask=(False, False, False),
+                    max_samples=effective_ik_samples, max_solver_iters=effective_ik_solver_iters,
+                    return_error=True,
+                )
+                ik_position_error = float(np.linalg.norm(as_numpy(ik_error).reshape(-1)[:3]))
+                max_ik_error = max(max_ik_error, ik_position_error)
+                solved_arm = as_numpy(solved_qpos).reshape(-1)[left_qs]
+                desired_arm = rate_limit_vector(arm_target, solved_arm, args.max_joint_speed * simulation_dt)
+                arm_delta = float(np.linalg.norm(desired_arm - previous_arm_target)) / simulation_dt
+                max_joint_command_speed = max(max_joint_command_speed, arm_delta)
+                previous_arm_target = desired_arm.copy()
+                arm_target = desired_arm
+            except Exception as exc:
+                ik_failures += 1
+                consecutive_ik_failures += 1
+                max_consecutive_ik_failures = max(max_consecutive_ik_failures, consecutive_ik_failures)
+                last_ik_error = f"{type(exc).__name__}: {exc}"
+                if first_ik_failure_time is None:
+                    first_ik_failure_time = time_seconds
+                if consecutive_ik_failures == 1 or consecutive_ik_failures % 10 == 0:
+                    print(
+                        "[handover] IK failure "
+                        f"sim_time={time_seconds:.2f}s phase={phase} "
+                        f"consecutive={consecutive_ik_failures}: {last_ik_error}",
+                        file=sys.stderr,
+                        flush=True,
+                    )
+            else:
+                consecutive_ik_failures = 0
+
+        tcp_step_speed = float(np.linalg.norm(tcp_command_target - initial_tcp)) / max(time_seconds, simulation_dt)
+        max_tcp_command_speed = max(max_tcp_command_speed, tcp_step_speed)
+
+        if phase == "ROBOT_RETREAT" and grasp_verified:
+            desired_retreat = rate_limit_vector(arm_target, LEFT_ARM_START, args.max_joint_speed * simulation_dt)
+            max_joint_command_speed = max(max_joint_command_speed, float(np.linalg.norm(desired_retreat - arm_target)) / simulation_dt)
+            arm_target = desired_retreat
+
+        gripper_target = GRIPPER_CLOSED if time_seconds >= schedule["slow_end"] else GRIPPER_OPEN
+        # Handover is currently a deterministic trajectory baseline: the
+        # command itself is rate-limited above, then applied kinematically so
+        # CPU-side actuator lag cannot make a valid slow trajectory miss the
+        # object.  The legacy strict profile continues to use Genesis PD
+        # control for the dynamics-oriented gate.
+        robot.set_dofs_position(hold_targets, hold_dofs, zero_velocity=True)
+        robot.set_dofs_position(arm_target, left_dofs, zero_velocity=True)
+        robot.set_dofs_position(gripper_target, gripper_dofs, zero_velocity=True)
+        update_viewer = args.viewer and should_update_viewer(step, viewer_interval, steps)
+        if update_viewer:
+            aligned = interpolate_points(vertices, source_position)
+            mesh_root = interpolate_points(mesh_roots, source_position)
+            aligned = aligned + (qpos[free_start : free_start + 3] - mesh_root)
+            mesh.set_vverts(aligned)
+            mesh_updates += 1
+        scene.step(update_visualizer=update_viewer)
+        viewer_updates += int(update_viewer)
+        human.set_qpos(qpos, zero_velocity=True)
+
+        if args.progress_hz > 0.0 and time_seconds + 1e-6 >= next_progress_time:
+            print(
+                f"[dynamic-handover] sim_time={time_seconds:6.2f}s phase={phase} "
+                f"ik={ik_calls}/{ik_failures} mesh={mesh_updates} "
+                f"wall={time.perf_counter() - started:6.1f}s",
+                flush=True,
+            )
+            next_progress_time += 1.0 / args.progress_hz
+
+        actual_tcp = tcp_position(end_effector)
+        actual_link = as_numpy(end_effector.get_pos(relative=False)).reshape(3)
+        tcp_target_distance = float(np.linalg.norm(actual_tcp - last_desired_tcp))
+        link_target_distance = float(np.linalg.norm(actual_link - last_desired_tcp))
+        object_position = as_numpy(object_entity.get_pos(relative=False)).reshape(3)
+        object_tcp_distance = float(np.linalg.norm(object_position - actual_tcp))
+        object_link_distance = float(np.linalg.norm(object_position - actual_link))
+        min_object_tcp_distance = min(min_object_tcp_distance, object_tcp_distance)
+        min_object_link_distance = min(min_object_link_distance, object_link_distance)
+        min_tcp_target_distance = min(min_tcp_target_distance, tcp_target_distance)
+        min_link_target_distance = min(min_link_target_distance, link_target_distance)
+        final_object_tcp_distance = object_tcp_distance
+        min_object_wrist_distance = min(min_object_wrist_distance, hand_pose_diagnostics["object_to_wrist_m"])
+        min_object_index_distance = min(min_object_index_distance, hand_pose_diagnostics["object_to_index_m"])
+        min_object_thumb_distance = min(min_object_thumb_distance, hand_pose_diagnostics["object_to_thumb_m"])
+        min_object_palm_distance = min(min_object_palm_distance, hand_pose_diagnostics["object_to_palm_centroid_m"])
+        if not hand_diagnostics or time_seconds - float(hand_diagnostics[-1]["time_s"]) >= 0.5:
+            hand_diagnostics.append({"time_s": time_seconds, **hand_pose_diagnostics})
+        if (phase.startswith("ROBOT_") or phase in ("GRIPPER_CLOSE", "GRASP_VERIFY")) and (
+            not tcp_diagnostics or time_seconds - last_diagnostic_time >= 0.5
+        ):
+            tcp_diagnostics.append({
+                "time_s": time_seconds,
+                "phase": phase,
+                "desired_tcp": last_desired_tcp.tolist(),
+                "actual_link": actual_link.tolist(),
+                "actual_tcp": actual_tcp.tolist(),
+                "object": object_position.tolist(),
+                "link_to_target_m": link_target_distance,
+                "tcp_to_target_m": tcp_target_distance,
+                "object_to_link_m": object_link_distance,
+                "object_to_tcp_m": object_tcp_distance,
+            })
+            last_diagnostic_time = time_seconds
+        contact_sample = step == 0 or step == steps or step % safety_interval == 0
+        left_contact = link_contact_count(scene, left_finger1, object_entity) > 0
+        right_contact = link_contact_count(scene, left_finger2, object_entity) > 0
+        robot_object_contacts = contact_count(scene, robot, object_entity)
+        human_object_contacts = contact_count(scene, human, object_entity)
+        if left_contact:
+            left_finger_contact_steps += 1
+        if right_contact:
+            right_finger_contact_steps += 1
+        if robot_object_contacts > 0:
+            robot_contact_steps += 1
+        if human_object_contacts > 0:
+            object_human_contacts += 1
+        if contact_sample:
+            object_robot_contacts += int(robot_object_contacts > 0)
+            if control_transferred:
+                human_object_contact_after_transfer += int(human_object_contacts > 0)
+        finger_midpoint = 0.5 * (
+            as_numpy(left_finger1.get_pos(relative=False)).reshape(3)
+            + as_numpy(left_finger2.get_pos(relative=False)).reshape(3)
+        )
+        object_finger_gap_distance = float(np.linalg.norm(object_position - finger_midpoint))
+        if phase == "GRASP_VERIFY" and left_contact and right_contact and object_finger_gap_distance <= GRASP_DISTANCE_TOLERANCE:
+            finger_contact_stable_steps += 1
+        else:
+            finger_contact_stable_steps = 0
+        if (not grasp_verified and finger_contact_stable_steps * simulation_dt >= GRASP_STABLE_SECONDS):
+            grasp_verified = True
+            release_verified = True
+            phase_times.setdefault("HUMAN_RELEASE", time_seconds)
+            transfer_time_s = time_seconds
+            transfer_object_position = object_position.copy()
+            try:
+                scene.sim.rigid_solver.add_weld_constraint(int(end_effector.idx), object_link_idx)
+                weld_constraint_registered = True
+                control_transferred = True
+                phase_times.setdefault("ROBOT_WELD", time_seconds)
+                print(f"[dynamic-handover] sim_time={time_seconds:6.2f}s phase=ROBOT_WELD", flush=True)
+            except Exception as exc:
+                weld_constraint_error = f"{type(exc).__name__}: {exc}"
+                print(f"[dynamic-handover] weld registration failed: {weld_constraint_error}", file=sys.stderr, flush=True)
+        min_object_finger_gap_distance = min(min_object_finger_gap_distance, object_finger_gap_distance)
+        if control_transferred:
+            relative_error = float(np.linalg.norm(object_position - actual_tcp))
+            max_relative_object_tcp_error = max(max_relative_object_tcp_error, relative_error)
+            if transfer_object_position is not None:
+                object_drop_m = max(object_drop_m, float(transfer_object_position[2] - object_position[2]))
+        if control_transferred and phase == "ROBOT_RETREAT" and time_seconds >= schedule["retreat_end"]:
+            retreat_completed = True
+
+        safety_check = step == 0 or step == steps or step % safety_interval == 0
+        if safety_check:
+            safety_checks += 1
+            current_distance = entity_aabb_distance(human, robot)
+            min_distance = min(min_distance, current_distance)
+            if time_seconds <= schedule["stable_start"]:
+                min_pre_handover_distance = min(min_pre_handover_distance, current_distance)
+            collision_steps += int(contact_count(scene, human, robot) > 0)
+        trajectory_times.append(time_seconds)
+        trajectory_human_qpos.append(qpos.copy())
+        trajectory_robot_qpos.append(as_numpy(robot.get_qpos()).reshape(-1).astype(np.float32))
+
+    # During a legitimate handover the gripper is expected to approach the
+    # human-held object, so the all-phase AABB minimum may be zero.  The
+    # personal-space gate therefore applies before the handover window; the
+    # handover window itself is guarded by collision_steps and grasp metrics.
+    layout_safe = (
+        min_base_root_distance >= MIN_BASE_ROOT_DISTANCE
+        and min_pre_handover_distance >= MIN_HUMAN_ROBOT_AABB_DISTANCE
+    )
+    if grasp_verified and weld_constraint_registered and retreat_completed and collision_steps == 0 and ik_failures == 0 and layout_safe:
+        final_phase = "SUCCESS"
+    elif collision_steps > 0 or not layout_safe:
+        final_phase = "SAFETY_ABORT"
+    elif ik_failures > 0:
+        final_phase = "FAILED_IK"
+    elif not grasp_verified:
+        final_phase = "FAILED_GRASP"
+    else:
+        final_phase = "FAILED_RETREAT"
+    phase_times[final_phase] = total_duration
+    elapsed_wall_seconds = time.perf_counter() - started
+    report = {
+        "task": "walking_object_handover_dynamic_transfer",
+        "status": "success" if final_phase == "SUCCESS" else "failure",
+        "phase": final_phase,
+        "dynamic_transfer_status": "success" if weld_constraint_registered and retreat_completed else "failure",
+        "profile": "dynamic-handover",
+        "seed": 2026,
+        "motion": str(motion_path),
+        "robot_urdf": str(robot_urdf),
+        "human_model": str(human_model),
+        "phase_times": phase_times,
+        "schedule": schedule,
+        "duration_seconds": total_duration,
+        "full_task_duration_seconds": schedule["task_end"],
+        "truncated_before_full_handover": truncated,
+        "human": {
+            "mesh_vertices": int(vertices.shape[1]), "mesh_faces": int(faces.shape[0]),
+            "motion_duration_s": motion_duration, "pause_window_s": [pause_start / fps, pause_end / fps],
+            "max_root_step_m": max_root_step,
+        },
+        "scene_layout": {
+            "robot_base_position": robot_base.tolist(),
+            "min_base_to_human_root_m": min_base_root_distance,
+            "minimum_required_base_to_human_root_m": MIN_BASE_ROOT_DISTANCE,
+            "layout_valid": min_base_root_distance >= MIN_BASE_ROOT_DISTANCE,
+        },
+        "object": {
+            "shape": "box", "size_m": list(OBJECT_SIZE), "hand_control_before_grasp": True,
+            "hand_attachment": "left_thumb_index_palm_frame",
+            "hand_attachment_gate_blend": PALM_GATE_BLEND,
+            "hand_attachment_wrist_joint": "L_Wrist",
+            "hand_attachment_palm_joints": ["L_Index1", "L_Middle1", "L_Pinky1", "L_Ring1", "L_Thumb1"],
+            "dynamic_after_grasp": bool(weld_constraint_registered),
+            "robot_contact_steps": robot_contact_steps,
+            "left_finger_contact_steps": left_finger_contact_steps,
+            "right_finger_contact_steps": right_finger_contact_steps,
+            "human_contact_steps": object_human_contacts,
+            "human_object_contact_after_transfer": human_object_contact_after_transfer,
+            "max_relative_object_tcp_error_m": max_relative_object_tcp_error,
+            "min_object_finger_gap_distance_m": min_object_finger_gap_distance,
+            "object_drop_m": object_drop_m,
+            "weld_constraint_registered": weld_constraint_registered,
+            "weld_constraint_error": weld_constraint_error,
+            "transfer_time_s": transfer_time_s,
+            "grasp_distance_tolerance_m": GRASP_DISTANCE_TOLERANCE,
+            "min_object_tcp_distance_m": min_object_tcp_distance,
+            "min_object_link_distance_m": min_object_link_distance,
+            "min_object_wrist_distance_m": min_object_wrist_distance,
+            "min_object_index_distance_m": min_object_index_distance,
+            "min_object_thumb_distance_m": min_object_thumb_distance,
+            "min_object_palm_centroid_distance_m": min_object_palm_distance,
+            "hand_pose_diagnostics": hand_diagnostics,
+            "min_tcp_target_distance_m": min_tcp_target_distance,
+            "min_link_target_distance_m": min_link_target_distance,
+            "final_object_tcp_distance_m": final_object_tcp_distance,
+            "tcp_diagnostics": tcp_diagnostics,
+            "grasp_verified": grasp_verified, "control_transferred": control_transferred,
+            "release_verified": release_verified, "retreat_completed": retreat_completed,
+        },
+        "robot": {
+            "base_position": robot_base.tolist(), "min_human_robot_aabb_distance_m": min_distance,
+            "min_pre_handover_aabb_distance_m": min_pre_handover_distance,
+            "minimum_human_robot_aabb_distance_m": MIN_HUMAN_ROBOT_AABB_DISTANCE,
+            "layout_safe": layout_safe,
+            "collision_steps": collision_steps, "ik_calls": ik_calls, "ik_failures": ik_failures,
+            "last_ik_error": last_ik_error,
+            "first_ik_failure_time_s": first_ik_failure_time,
+            "max_consecutive_ik_failures": max_consecutive_ik_failures,
+            "ik_hz_effective": effective_ik_hz,
+            "ik_max_samples_effective": effective_ik_samples,
+            "ik_max_solver_iters_effective": effective_ik_solver_iters,
+            "max_ik_position_error_m": max_ik_error,
+            "max_tcp_command_speed_mps": max_tcp_command_speed,
+            "max_joint_command_speed_radps": max_joint_command_speed,
+            "max_tcp_speed_limit_mps": args.max_tcp_speed,
+            "max_joint_speed_limit_radps": args.max_joint_speed,
+            "safety_checks": safety_checks,
+        },
+        "elapsed_wall_seconds": elapsed_wall_seconds,
+        "realtime_factor": total_duration / max(elapsed_wall_seconds, 1e-9),
+        "simulation_hz": simulation_hz,
+        "simulation_steps": steps + 1,
+        "viewer": args.viewer,
+        "viewer_updates": viewer_updates,
+        "mesh_updates": mesh_updates,
+        "backend_requested": args.backend,
+        "backend_used": backend_name,
+        "note": "The object is dynamic. Before transfer it is held by explicit human-side kinematic updates; after dual-finger contact Genesis owns it through a runtime weld constraint and no object pose writes occur.",
+    }
+    if args.save_trajectory is not None:
+        save_trajectory_cache(
+            args.save_trajectory.resolve(), trajectory_times, trajectory_human_qpos, trajectory_robot_qpos,
+            {
+                "source_report": str(report_path),
+                "motion": str(motion_path),
+                "profile": "dynamic-handover",
+                "backend_used": backend_name,
+                "robot_base_position": robot_base.tolist(),
+                "control_transfer_time_s": float(phase_times.get("HUMAN_RELEASE", schedule["verify_end"])),
+                "object_attachment": "left_thumb_index_palm_frame",
+            },
+        )
+        report["trajectory"] = str(args.save_trajectory.resolve())
+    report_path.parent.mkdir(parents=True, exist_ok=True)
+    report_path.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
+    print(json.dumps(report, ensure_ascii=False, indent=2))
+    return report
+
+
+
+
 def run_visual_profile(args: argparse.Namespace, include_robot: bool) -> dict[str, object]:
     """Run a visual-only scene without the strict HRI control/diagnostic loop.
 
@@ -1332,6 +1931,8 @@ def run(args: argparse.Namespace) -> dict[str, object]:
         return run_layout_diagnostic(layout_args)
     if args.profile == "handover":
         return run_handover(args)
+    if args.profile == "dynamic-handover":
+        return run_dynamic_handover(args)
     if args.profile == "hri-replay":
         return run_hri_replay(args)
     if args.profile == "human-viewer":

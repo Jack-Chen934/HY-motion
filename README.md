@@ -242,6 +242,29 @@ AABB 间隙是保守的宽相位指标；候选站位通过后仍需可视化检
 可达性与真实接触阶段。默认机器人资产从相邻的 `gaze_vr_isaaclab` 仓库读取，路径
 由工作区结构计算；也可以通过 `--robot-urdf` 指定资产副本。
 
+### 动力学物体交接实验
+
+`handover` 保留为运动学基线。独立的 `dynamic-handover` profile 使用动态 Box 物体：
+人体侧只在 `HUMAN_HOLD` 阶段更新物体位姿；两个真实 R1 Pro 手指碰撞链接连续接触
+后，调用 Genesis 运行时 `add_weld_constraint`，停止所有物体位姿写入，再控制机器人撤回。
+报告会分别记录 `left_finger_contact_steps`、`right_finger_contact_steps`、
+`weld_constraint_registered`、`dynamic_transfer_status`、物体掉落量和转移后人体接触。
+
+```bash
+/var/local/sorry/conda/envs/tavis/bin/python \
+  run_hri_walking_approach.py \
+  --profile dynamic-handover \
+  --backend cpu \
+  --report reports/dynamic_handover_full.json
+```
+
+本次完整实验已注册 weld，双指接触步数分别为 `687` 和 `231`，转移时刻约
+`35.24 s`，撤回完成，物体最大 TCP 相对误差约 `0.045 m`，掉落量约 `0.030 m`。
+但当前站位在交接阶段产生 `47` 个保守人体代理碰撞采样，因此报告最终 phase 为
+`SAFETY_ABORT`；`dynamic_transfer_status` 仍为 `success`，表示物体确实完成了动态
+约束转移和撤回。这说明下一步应先重新优化机器人站位和手部接近方向，再把安全验收
+从“动力学转移成功”提升到“转移且零人体碰撞”。
+
 ### Handover 可视化
 
 在有图形显示的本地终端运行。viewer 模式使用至少 30 Hz 的视觉步长；CPU 软件
